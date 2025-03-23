@@ -16,7 +16,7 @@
 #include <numeric>
 #include <optional>
 #include <random>
-#include <thread>  // NOLINT
+#include <thread>  // NOLINT TODO(beyyes) what's the meaning?
 
 #include "common/exception.h"
 #include "gtest/gtest.h"
@@ -44,6 +44,7 @@ TEST(TrieTest, TrieStructureCheck) {
   auto root = trie.GetRoot();
   ASSERT_EQ(root->children_.size(), 1);
   ASSERT_EQ(root->children_.at('t')->children_.size(), 1);
+  // TODO(beyyes) 路径上不存在时获取 children.size() 会不会空指针?
   ASSERT_EQ(root->children_.at('t')->children_.at('e')->children_.size(), 1);
   ASSERT_EQ(root->children_.at('t')->children_.at('e')->children_.at('s')->children_.size(), 1);
   ASSERT_EQ(root->children_.at('t')->children_.at('e')->children_.at('s')->children_.at('t')->children_.size(), 0);
