@@ -80,9 +80,9 @@ auto DeepCopy(const std::shared_ptr<const TrieNode>& node, std::string_view key,
     return trie_ret;
   }
 
-  // char 不存在, 创建新节点
+  // key 不存在, 创建新节点
   if (const auto it = node->children_.find(c); it == node->children_.end()) {
-    // 体现多态, 用了 Clone 方法, 就不需要判断是 TrieNode 还是 TrieNodeWithValue了
+    // Clone 体现多态, 就不需要判断是 TrieNode 还是 TrieNodeWithValue 了
     std::unique_ptr<TrieNode> node_copy = node->Clone();
     node_copy->children_.emplace(c, DeepCopy(nullptr, key, pos + 1, std::move(value)));
     // 由已存在的指针或智能指针构造智能指针就不能用 make_shared了
@@ -90,39 +90,13 @@ auto DeepCopy(const std::shared_ptr<const TrieNode>& node, std::string_view key,
     return ret;
   }
 
-  // char c 存在于 node.children
+  // key 存在
   std::unique_ptr<TrieNode> node_copy = node->Clone();
   std::shared_ptr<const TrieNode> child = DeepCopy(node->children_.find(c)->second, key, pos + 1, std::move(value));
+  // map覆盖值得用 operator[], insert/emplace 不会覆盖值
   node_copy->children_[c] = child;
-  //node_copy->children_.insert({c, child});
-  // 由已存在的指针或智能指针构造智能指针就不能用 make_shared了
   std::shared_ptr<const TrieNode> ret = std::move(node_copy);
   return ret;
-
-  // const std::unique_ptr<TrieNode> node_copy = node->Clone();
-  // //std::shared_ptr<const TrieNode>
-  // node_copy->children_.insert({c, DeepCopy(node_copy->children_.find(c)->second, key, pos + 1, std::move(value))});
-  // if (node->is_value_node_) {
-  //   // 当前 Node 有 Value, 需要把 TrieNode 强转为 TrieNodeWithValue
-  //   return std::make_shared<const TrieNodeWithValue<T>>(node_copy->children_, dynamic_cast<const TrieNodeWithValue<T>*>(node.get())->value_);
-  // }
-  // // 当前 Node 无 Value
-  // return std::make_shared<const TrieNode>(node_copy->children_);
-
-  // std::map<char, std::shared_ptr<const TrieNode>> children;
-  // for (const auto& pair : node->children_) {
-  //   if (pair.first == c) {
-  //     children.insert({c, DeepCopy(pair.second, key, pos + 1, std::move(value))});
-  //   } else {
-  //     children.insert(pair);
-  //   }
-  // }
-  // if (node->is_value_node_) {
-  //   // 当前 Node 有 Value, 需要把 TrieNode 强转为 TrieNodeWithValue
-  //   return std::make_shared<const TrieNodeWithValue<T>>(children, dynamic_cast<const TrieNodeWithValue<T>*>(node.get())->value_);
-  // }
-  // // 当前 Node 无 Value
-  // return std::make_shared<const TrieNode>(children);
 }
 
 /**
