@@ -42,12 +42,12 @@ TEST(TrieTest, ConstructorTest) { auto trie = Trie(); }
 
 TEST(TrieTest, BasicPutTest) {
   auto trie = Trie();
-  trie = trie.Put<uint32_t>("t1", 233);
-  //trie = trie.Put<std::string>("test-string", "test");
-  trie = trie.Put<uint64_t>("t2", 23333333);
-  //ASSERT_EQ(*trie.Get<std::string>("test-string"), "test");
-  ASSERT_EQ(*trie.Get<uint64_t>("t2"), 23333333);
-  ASSERT_EQ(*trie.Get<uint32_t>("t1"), 233);
+  trie = trie.Put<uint32_t>("test-int1", 233);
+  trie = trie.Put<std::string>("test-string", "test");
+  trie = trie.Put<uint64_t>("test-int2", 23333333);
+  ASSERT_EQ(*trie.Get<std::string>("test-string"), "test");
+  ASSERT_EQ(*trie.Get<uint64_t>("test-int2"), 23333333);
+  ASSERT_EQ(*trie.Get<uint32_t>("test-int1"), 233);
 }
 
 TEST(TrieTest, TrieStructureCheck) {
