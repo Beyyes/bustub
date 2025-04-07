@@ -57,61 +57,72 @@ auto Trie::Get(std::string_view key) const -> const T * {
 }
 
 template <class T>
-auto deep_copy(std::shared_ptr<const TrieNode> node, std::string_view key, size_t pos, T value)
+auto DeepCopy(const std::shared_ptr<const TrieNode>& node, std::string_view key, const size_t pos, T value)
     -> std::shared_ptr<const TrieNode> {
-  // 空字符串应该存储在 root 节点上, 将 root 节点变成 TrieNodeWithValue
-  if (key.empty()) {
-    if (node == nullptr) {
-      // 还不能用 nullptr 来初始化 children_ (map)
-      return std::make_shared<const TrieNodeWithValue<T>>(std::make_shared<T>(std::move(value)));
-    } else {
-      return std::make_shared<const TrieNodeWithValue<T>>(node->children_, std::make_shared<T>(std::move(value)));
-    }
-  }
 
-  char c = key[pos];
-
-  // leaf node 永远覆写
   if (pos == key.size()) {
-
-    // already exist value in current node
-    if (node) {
-      // (beyyes) 每次参数传递都要 std::move 肯定不好...  能不能只传递 value ?
-      return std::make_shared<const TrieNodeWithValue<T>>(node->children_, std::make_shared<T>(std::move(value)));
+    // (beyyes) 每次都要 std::move, 因为 T value 可能是 unique_ptr
+    auto value_ptr = std::make_shared<T>(std::move(value));
+    if (node != nullptr) {
+      // already exist value in current node
+      return std::make_shared<const TrieNodeWithValue<T>>(node->children_, value_ptr);
     }
-
-    // 这样构造 TrieNodeWithValue 对吗
-    return std::make_shared<const TrieNodeWithValue<T>>(std::make_shared<T>(std::move(value)));
+    return std::make_shared<const TrieNodeWithValue<T>>(value_ptr);
   }
+
+  const char c = key[pos];
 
   // root node == nullptr
   if (node == nullptr) {
-    std::map<char, std::shared_ptr<const TrieNode>> children_;
-    children_.emplace(c, deep_copy(nullptr, key, pos + 1, std::move(value)));
-    auto trie_ret = std::make_shared<const TrieNode>(children_);
+    std::map<char, std::shared_ptr<const TrieNode>> children;
+    children.emplace(c, DeepCopy(nullptr, key, pos + 1, std::move(value)));
+    auto trie_ret = std::make_shared<const TrieNode>(children);
     return trie_ret;
   }
 
   // char 不存在, 创建新节点
-  auto it = node->children_.find(c);
-  if (it == node->children_.end()) {
-    std::map<char, std::shared_ptr<const TrieNode>> children_;
-    children_.emplace(c, deep_copy(nullptr, key, pos + 1, std::move(value)));
-    auto ret = std::make_shared<const TrieNode>(children_);
+  if (const auto it = node->children_.find(c); it == node->children_.end()) {
+    // 体现多态, 用了 Clone 方法, 就不需要判断是 TrieNode 还是 TrieNodeWithValue了
+    std::unique_ptr<TrieNode> node_copy = node->Clone();
+    node_copy->children_.emplace(c, DeepCopy(nullptr, key, pos + 1, std::move(value)));
+    // 由已存在的指针或智能指针构造智能指针就不能用 make_shared了
+    std::shared_ptr<const TrieNode> ret = std::move(node_copy);
     return ret;
   }
 
-  // c 已经存在, 这行判断可能有问题?
-  // std::shared_ptr<const TrieNode> node_copy = node->Clone();
-  std::map<char, std::shared_ptr<const TrieNode>> children_;
-  for (const auto &pair : node->children_) {
-    if (pair.first == c) {
-      children_.insert({c, deep_copy(pair.second, key, pos + 1, std::move(value))});
-    } else {
-      children_.insert(pair);
-    }
-  }
-  return std::make_shared<const TrieNode>(children_);
+  // char c 存在于 node.children
+  std::unique_ptr<TrieNode> node_copy = node->Clone();
+  std::shared_ptr<const TrieNode> child = DeepCopy(node->children_.find(c)->second, key, pos + 1, std::move(value));
+  node_copy->children_[c] = child;
+  //node_copy->children_.insert({c, child});
+  // 由已存在的指针或智能指针构造智能指针就不能用 make_shared了
+  std::shared_ptr<const TrieNode> ret = std::move(node_copy);
+  return ret;
+
+  // const std::unique_ptr<TrieNode> node_copy = node->Clone();
+  // //std::shared_ptr<const TrieNode>
+  // node_copy->children_.insert({c, DeepCopy(node_copy->children_.find(c)->second, key, pos + 1, std::move(value))});
+  // if (node->is_value_node_) {
+  //   // 当前 Node 有 Value, 需要把 TrieNode 强转为 TrieNodeWithValue
+  //   return std::make_shared<const TrieNodeWithValue<T>>(node_copy->children_, dynamic_cast<const TrieNodeWithValue<T>*>(node.get())->value_);
+  // }
+  // // 当前 Node 无 Value
+  // return std::make_shared<const TrieNode>(node_copy->children_);
+
+  // std::map<char, std::shared_ptr<const TrieNode>> children;
+  // for (const auto& pair : node->children_) {
+  //   if (pair.first == c) {
+  //     children.insert({c, DeepCopy(pair.second, key, pos + 1, std::move(value))});
+  //   } else {
+  //     children.insert(pair);
+  //   }
+  // }
+  // if (node->is_value_node_) {
+  //   // 当前 Node 有 Value, 需要把 TrieNode 强转为 TrieNodeWithValue
+  //   return std::make_shared<const TrieNodeWithValue<T>>(children, dynamic_cast<const TrieNodeWithValue<T>*>(node.get())->value_);
+  // }
+  // // 当前 Node 无 Value
+  // return std::make_shared<const TrieNode>(children);
 }
 
 /**
@@ -126,8 +137,72 @@ auto Trie::Put(std::string_view key, T value) const -> Trie {
   // You should walk through the trie and create new nodes if necessary. If the node corresponding to the key already
   // exists, you should create a new `TrieNodeWithValue`.
 
-  return Trie(deep_copy(root_, key, 0, std::move(value)));
+  // 空字符串应该存储在 root 节点上, 将 root 节点变成 TrieNodeWithValue
+  if (key.empty()) {
+    if (root_ == nullptr) {
+      return Trie(std::make_shared<const TrieNodeWithValue<T>>(std::make_shared<T>(std::move(value))));
+    }
+    return Trie(std::make_shared<const TrieNodeWithValue<T>>(root_->children_, std::make_shared<T>(std::move(value))));
+  }
+
+  return Trie(DeepCopy(root_, key, 0, std::move(value)));
 }
+
+template <class T>
+static auto CloneAndPut(const std::shared_ptr<const TrieNode>& node, std::string_view key,
+                                                    const size_t index, T&& value) -> std::shared_ptr<const TrieNode>  {
+  if (index == key.size()) {
+    // Create a new value node, inheriting children from the existing node if present.
+    auto value_ptr = std::make_shared<T>(std::forward<T>(value));
+    if (node != nullptr) {
+      return std::make_shared<TrieNodeWithValue<T>>(node->children_, value_ptr);
+    }
+    return std::make_shared<TrieNodeWithValue<T>>(value_ptr);
+  }
+
+  const char c = key[index];
+  std::shared_ptr<const TrieNode> child_node;
+
+  if (node != nullptr) {
+    if (const auto it = node->children_.find(c); it != node->children_.end()) {
+      child_node = it->second;
+    }
+  }
+
+  // Recursively process the child node.
+  auto new_child = CloneAndPut<T>(child_node, key, index + 1, std::forward<T>(value));
+
+  // Clone the current node or create a new one if it doesn't exist.
+  std::unique_ptr<TrieNode> new_node;
+  if (node != nullptr) {
+    new_node = node->Clone();
+  } else {
+    new_node = std::make_unique<TrieNode>();
+  }
+
+  // Update the child pointer for the current character.
+  new_node->children_[c] = new_child;
+
+  return std::shared_ptr<const TrieNode>(new_node.release());
+}
+
+// template <class T>
+// auto Trie::Put(std::string_view key, T value) const -> Trie {
+//   if (key.empty()) {
+//     // Handle empty key case, replace the root with a new value node.
+//     std::shared_ptr<const TrieNode> new_root;
+//     if (root_ != nullptr) {
+//       new_root = std::make_shared<TrieNodeWithValue<T>>(root_->children_, std::make_shared<T>(std::move(value)));
+//     } else {
+//       new_root = std::make_shared<TrieNodeWithValue<T>>(std::make_shared<T>(std::move(value)));
+//     }
+//     return Trie(new_root);
+//   }
+//
+//   // Recursively process each character to build the new trie.
+//   auto new_root = CloneAndPut<T>(root_, key, 0, std::move(value));
+//   return Trie(new_root);
+// }
 
 /**
  * @brief Remove the key from the trie.

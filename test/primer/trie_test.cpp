@@ -26,12 +26,28 @@ namespace bustub {
 
 TEST(TrieTest, ConstructorTest) { auto trie = Trie(); }
 
+// TEST(TrieTest, MyOwnTest) {
+//   std::shared_ptr<const TrieNode> node = std::make_shared<const TrieNodeWithValue<int>>(std::make_shared<int>(42));
+//   auto aa = dynamic_cast<const TrieNodeWithValue*>(node.get());
+//   std::cout << aa->value_ << std::endl;
+//   // if (typeid(*node) == typeid(TrieNodeWithValue<int>)) {
+//   //   std::cout << "Type matches" << std::endl;
+//   // } else {
+//   //   std::cout << "Type mismatch" << std::endl;
+//   // }
+//   //
+//   // const auto* casted = dynamic_cast<const TrieNodeWithValue<int>*>(node.get());
+//   // assert(casted != nullptr);  // 此处是否触发？
+// }
+
 TEST(TrieTest, BasicPutTest) {
   auto trie = Trie();
-  trie = trie.Put<uint32_t>("test-int", 233);
-  trie = trie.Put<uint64_t>("test-int2", 23333333);
-  trie = trie.Put<std::string>("test-string", "test");
-  trie = trie.Put<std::string>("", "empty-key");
+  trie = trie.Put<uint32_t>("t1", 233);
+  //trie = trie.Put<std::string>("test-string", "test");
+  trie = trie.Put<uint64_t>("t2", 23333333);
+  //ASSERT_EQ(*trie.Get<std::string>("test-string"), "test");
+  ASSERT_EQ(*trie.Get<uint64_t>("t2"), 23333333);
+  ASSERT_EQ(*trie.Get<uint32_t>("t1"), 233);
 }
 
 TEST(TrieTest, TrieStructureCheck) {
@@ -44,7 +60,6 @@ TEST(TrieTest, TrieStructureCheck) {
   auto root = trie.GetRoot();
   ASSERT_EQ(root->children_.size(), 1);
   ASSERT_EQ(root->children_.at('t')->children_.size(), 1);
-  // TODO(beyyes) 路径上不存在时获取 children.size() 会不会空指针?
   ASSERT_EQ(root->children_.at('t')->children_.at('e')->children_.size(), 1);
   ASSERT_EQ(root->children_.at('t')->children_.at('e')->children_.at('s')->children_.size(), 1);
   ASSERT_EQ(root->children_.at('t')->children_.at('e')->children_.at('s')->children_.at('t')->children_.size(), 0);
