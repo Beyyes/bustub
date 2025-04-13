@@ -31,6 +31,10 @@ auto Trie::Get(std::string_view key) const -> const T * {
   // dynamic_cast returns `nullptr`, it means the type of the value is mismatched, and you should return nullptr.
   // Otherwise, return the value.
 
+  if (root_ == nullptr) {
+    return nullptr;
+  }
+
   auto current = root_;
   for (char c : key) {
     if (current == nullptr) {
@@ -43,7 +47,7 @@ auto Trie::Get(std::string_view key) const -> const T * {
     current = it->second;
   }
 
-  // 循环结束后，current 可能为 nullptr（例如 key 为空时，且 root_ 为 nullptr）
+  // 循环结束后, current 可能为 nullptr（例如 key 为空时, 且 root_ 为 nullptr）
   if (!current->is_value_node_) {
     return nullptr;
   }
@@ -57,9 +61,8 @@ auto Trie::Get(std::string_view key) const -> const T * {
 }
 
 template <class T>
-auto DeepCopy(const std::shared_ptr<const TrieNode>& node, std::string_view key, const size_t pos, T value)
+auto DeepCopy(const std::shared_ptr<const TrieNode> &node, std::string_view key, const size_t pos, T value)
     -> std::shared_ptr<const TrieNode> {
-
   if (pos == key.size()) {
     // (beyyes) 每次都要 std::move, 因为 T value 可能是 unique_ptr
     auto value_ptr = std::make_shared<T>(std::move(value));
@@ -72,7 +75,7 @@ auto DeepCopy(const std::shared_ptr<const TrieNode>& node, std::string_view key,
 
   const char c = key[pos];
 
-  // root node == nullptr
+  // root node is nullptr, or create non-exist key
   if (node == nullptr) {
     std::map<char, std::shared_ptr<const TrieNode>> children;
     children.emplace(c, DeepCopy(nullptr, key, pos + 1, std::move(value)));
@@ -80,21 +83,18 @@ auto DeepCopy(const std::shared_ptr<const TrieNode>& node, std::string_view key,
     return trie_ret;
   }
 
-  // key 不存在, 创建新节点
+  // Clone 体现多态, 无需判断 TrieNode 还是 TrieNodeWithValue
+  // COW 实现, 总需要 Clone, 是否会有并发问题?
+  std::unique_ptr<TrieNode> node_copy = node->Clone();
+
   if (const auto it = node->children_.find(c); it == node->children_.end()) {
-    // Clone 体现多态, 就不需要判断是 TrieNode 还是 TrieNodeWithValue 了
-    std::unique_ptr<TrieNode> node_copy = node->Clone();
+    // key 不存在, 创建新节点
     node_copy->children_.emplace(c, DeepCopy(nullptr, key, pos + 1, std::move(value)));
-    // 由已存在的指针或智能指针构造智能指针就不能用 make_shared了
-    std::shared_ptr<const TrieNode> ret = std::move(node_copy);
-    return ret;
+  } else {
+    // key 存在, map覆盖值得用 operator[]
+    node_copy->children_[c] = DeepCopy(node->children_.find(c)->second, key, pos + 1, std::move(value));
   }
 
-  // key 存在
-  std::unique_ptr<TrieNode> node_copy = node->Clone();
-  std::shared_ptr<const TrieNode> child = DeepCopy(node->children_.find(c)->second, key, pos + 1, std::move(value));
-  // map覆盖值得用 operator[], insert/emplace 不会覆盖值
-  node_copy->children_[c] = child;
   std::shared_ptr<const TrieNode> ret = std::move(node_copy);
   return ret;
 }
@@ -123,8 +123,8 @@ auto Trie::Put(std::string_view key, T value) const -> Trie {
 }
 
 template <class T>
-static auto CloneAndPut(const std::shared_ptr<const TrieNode>& node, std::string_view key,
-                                                    const size_t index, T&& value) -> std::shared_ptr<const TrieNode>  {
+static auto CloneAndPut(const std::shared_ptr<const TrieNode> &node, std::string_view key, const size_t index,
+                        T &&value) -> std::shared_ptr<const TrieNode> {
   if (index == key.size()) {
     // Create a new value node, inheriting children from the existing node if present.
     auto value_ptr = std::make_shared<T>(std::forward<T>(value));
@@ -157,6 +157,7 @@ static auto CloneAndPut(const std::shared_ptr<const TrieNode>& node, std::string
   // Update the child pointer for the current character.
   new_node->children_[c] = new_child;
 
+  // release 改成 move? release 和 move 的安全高效区别?
   return std::shared_ptr<const TrieNode>(new_node.release());
 }
 
@@ -178,15 +179,77 @@ static auto CloneAndPut(const std::shared_ptr<const TrieNode>& node, std::string
 //   return Trie(new_root);
 // }
 
+auto RemoveCopy(const std::shared_ptr<const TrieNode> &node, std::string_view key, const size_t pos)
+    -> std::shared_ptr<const TrieNode> {
+  const char c = key[pos];
+
+  if (pos == key.size()) {
+    // is value node: has children, return TrieNode with children; no children, return TrieNode with empty children?
+    // not value node, return null
+    if (node->is_value_node_) {
+      // is last node, return with no children
+      if (node->children_.empty()) {
+        return std::make_shared<const TrieNode>();
+      }
+      // is not last node, change TrieNodeWithValue to TrieNode
+      return std::make_shared<const TrieNode>(node->children_);
+    }
+    return nullptr;
+  }
+
+  const auto it = node->children_.find(c);
+  if (it == node->children_.end()) {
+    return nullptr;
+  }
+
+  std::shared_ptr<const TrieNode> child_node = RemoveCopy(it->second, key, pos + 1);
+  if (child_node == nullptr) {
+    return nullptr;
+  }
+
+  std::unique_ptr<TrieNode> new_node = node->Clone();
+
+  // only when child_node is non value node can erase
+  if (child_node->children_.empty() && !child_node->is_value_node_) {
+    new_node->children_.erase(c);
+    return std::move(new_node);
+  }
+
+  new_node->children_[c] = std::move(child_node);
+  return std::move(new_node);
+}
+
 /**
  * @brief Remove the key from the trie.
  * @return If the key does not exist, return the original trie. Otherwise, returns the new trie.
  */
 auto Trie::Remove(std::string_view key) const -> Trie {
-  throw NotImplementedException("Trie::Remove is not implemented.");
+  // throw NotImplementedException("Trie::Remove is not implemented.");
 
-  // You should walk through the trie and remove nodes if necessary. If the node doesn't contain a value any more,
-  // you should convert it to `TrieNode`. If a node doesn't have children any more, you should remove it.
+  // You should walk through the trie and remove nodes if necessary. If the node doesn't contain a value anymore,
+  // you should convert it to `TrieNode`. If a node doesn't have children anymore, you should remove it.
+
+  if (key.empty()) {
+    if (root_ == nullptr) {
+      return *this;
+    }
+    return Trie(std::make_shared<const TrieNode>(root_->children_));
+  }
+
+  if (root_ == nullptr) {
+    return *this;
+  }
+
+  if (const std::shared_ptr<const TrieNode> child = RemoveCopy(root_, key, 0); child != nullptr) {
+    if (child->children_.empty()) {
+      return Trie(nullptr);
+    }
+    return Trie(child);
+  }
+  return *this;
+
+  // 这样转换对吗? 用于实现类似 instanceof 的作用.
+  // const auto *ret = dynamic_cast<const TrieNodeWithValue*>(current.get());
 }
 
 // Below are explicit instantiation of template functions.

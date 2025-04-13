@@ -26,20 +26,6 @@ namespace bustub {
 
 TEST(TrieTest, ConstructorTest) { auto trie = Trie(); }
 
-// TEST(TrieTest, MyOwnTest) {
-//   std::shared_ptr<const TrieNode> node = std::make_shared<const TrieNodeWithValue<int>>(std::make_shared<int>(42));
-//   auto aa = dynamic_cast<const TrieNodeWithValue*>(node.get());
-//   std::cout << aa->value_ << std::endl;
-//   // if (typeid(*node) == typeid(TrieNodeWithValue<int>)) {
-//   //   std::cout << "Type matches" << std::endl;
-//   // } else {
-//   //   std::cout << "Type mismatch" << std::endl;
-//   // }
-//   //
-//   // const auto* casted = dynamic_cast<const TrieNodeWithValue<int>*>(node.get());
-//   // assert(casted != nullptr);  // 此处是否触发？
-// }
-
 TEST(TrieTest, BasicPutTest) {
   auto trie = Trie();
   trie = trie.Put<uint32_t>("test-int1", 233);
